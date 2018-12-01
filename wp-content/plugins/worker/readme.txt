@@ -56,6 +56,24 @@ https://vimeo.com/220647227
 
 == Changelog ==
 
+= 4.6.3 =
+
+- Fix: Edge cases when Local Sync was unsuccessful.
+- Fix: WooCommerce database upgrade not showing up on the ManageWP/Pro Sites dashboard.
+
+= 4.6.2 =
+
+- Fix: Local Sync tool improvements.
+
+= 4.6.1 =
+
+- Fix: Worker auto-recovery on PHP 7.
+- Fix: Replaced eval function that triggered false positives with some security plugins.
+
+= 4.6.0 =
+
+- New: Localhost Sync has reached the closed beta stage. Stay tuned for more info!
+
 = 4.5.0 =
 
 - Improvement: Removed deprecated ManageWP Classic code.

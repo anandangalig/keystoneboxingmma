@@ -319,6 +319,7 @@
 			FLBuilder._highlightEmptyCols();
 
 			FLBuilder.addHook('didInitUI', FLBuilder._showTourOrTemplates.bind(FLBuilder) );
+			FLBuilder.addHook('endEditingSession', FLBuilder._doStats.bind(this) );
 
 			FLBuilder.triggerHook('init');
 		},
@@ -811,6 +812,9 @@
 			$('body').delegate('.fl-loop-data-source-select select[name=data_source]', 'change', FLBuilder._loopDataSourceChange);
 			$('body').delegate('.fl-custom-query select[name=post_type]', 'change', FLBuilder._customQueryPostTypeChange);
 
+			/* Text Fields - Add Predefined Value Selector */
+			$('body').delegate('.fl-text-field-add-value', 'change', FLBuilder._textFieldAddValueSelectChange);
+
 			/* Number Fields */
 			$('body').delegate('.fl-field input[type=number]', 'focus', FLBuilder._onNumberFieldFocus );
 			$('body').delegate('.fl-field input[type=number]', 'blur', FLBuilder._onNumberFieldBlur );
@@ -829,6 +833,17 @@
 			$('a').off('click', FLBuilder._preventDefault);
 			$('.fl-page-nav .nav a').off('click', FLBuilder._headerLinkClicked);
 			$('body').undelegate('.fl-builder-content a', 'click', FLBuilder._preventDefault);
+		},
+
+		/**
+		 * Rebind events when restarting the edit session
+		 * @since 2.1.2.3
+		 * @access private
+		 */
+		_rebindEvents: function() {
+			$('a').on('click', FLBuilder._preventDefault);
+			$('.fl-page-nav .nav a').on('click', FLBuilder._headerLinkClicked);
+			$('body').delegate('.fl-builder-content a', 'click', FLBuilder._preventDefault);
 		},
 
 		/**
@@ -1352,9 +1367,16 @@
 		{
 			var href = window.location.href;
 
+			try {
+				var flbuilder = typeof window.opener.FLBuilder != 'undefined'
+			}
+			catch(err) {
+				var flbuilder = false
+			}
+
 			if ( FLBuilderConfig.isUserTemplate && typeof window.opener != 'undefined' && window.opener ) {
 
-				if ( typeof window.opener.FLBuilder != 'undefined' ) {
+				if ( flbuilder ) {
 					if ( 'undefined' === typeof FLBuilderGlobalNodeId ) {
 						window.opener.FLBuilder._updateLayout();
 					} else {
@@ -1388,9 +1410,16 @@
 		_exitWithoutRefresh: function() {
 			var href = window.location.href;
 
-			if ( FLBuilderConfig.isUserTemplate && typeof window.opener != 'undefined' && window.opener ) {
+			try {
+				var flbuilder = typeof window.opener.FLBuilder != 'undefined'
+			}
+			catch(err) {
+				var flbuilder = false
+			}
 
-				if ( typeof window.opener.FLBuilder != 'undefined' ) {
+			if ( FLBuilderConfig.isUserTemplate && flbuilder && window.opener ) {
+
+				if ( flbuilder ) {
 					if ( 'undefined' === typeof FLBuilderGlobalNodeId ) {
 						window.opener.FLBuilder._updateLayout();
 					} else {
@@ -2044,6 +2073,28 @@
 				else {
 					FLBuilder._initTemplateSelector();
 				}
+			}
+		},
+
+		/**
+		 * Save browser stats when builder is loaded.
+		 * @since 2.1.6
+		 */
+		_doStats: function() {
+			if( 1 == FLBuilderConfig.statsEnabled ) {
+
+				args = {
+					'screen-width': screen.width,
+					'screen-height': screen.height,
+					'pixel-ratio': window.devicePixelRatio,
+					'user-agent': window.navigator.userAgent,
+					'isrtl': FLBuilderConfig.isRtl
+				}
+
+				FLBuilder.ajax({
+					action: 'save_browser_stats',
+					browser_data: args
+				});
 			}
 		},
 
@@ -2787,7 +2838,9 @@
 		 */
 		_buildOverlayOverflowMenu: function( overlay )
 		{
-			var actions       = overlay.find( '.fl-block-overlay-actions' ),
+			var header        = overlay.find( '.fl-block-overlay-header' )
+				actions       = overlay.find( '.fl-block-overlay-actions' ),
+				hasRules	  = overlay.find( '.fl-block-has-rules' ),
 				original      = actions.data( 'original' ),
 				actionsWidth  = 0,
 				items         = null,
@@ -2812,6 +2865,11 @@
 			// Get the actions width and items. Subtract any padding plus 2px (8px)
 			actionsWidth  = Math.floor(actions[0].getBoundingClientRect().width) - 8;
 			items         = actions.find( ' > i, > span.fl-builder-has-submenu' );
+
+			// Add the width of the visibility rules indicator if there is one.
+			if ( hasRules.length && actionsWidth + hasRules.outerWidth() > header.outerWidth() ) {
+				itemsWidth += hasRules.outerWidth();
+			}
 
 			// Find visible and overflow items.
 			for( ; i < items.length; i++ ) {
@@ -2966,8 +3024,9 @@
 
                 // Append the overlay.
                 overlay = FLBuilder._appendOverlay( row, template( {
-                    global : row.hasClass( 'fl-node-global' ),
-                    node   : row.attr('data-node'),
+                    node : row.attr('data-node'),
+	                global : row.hasClass( 'fl-node-global' ),
+					hasRules : row.hasClass( 'fl-node-has-rules' ),
                 } ) );
 
                 // Adjust the overlay position if covered by negative margin content.
@@ -3680,6 +3739,7 @@
 				row				= col.closest('.fl-row'),
 				rowIsFixedWidth = !! row.find('.fl-row-fixed-width').addBack('.fl-row-fixed-width').length,
 				userCanResizeRows = FLBuilderConfig.rowResize.userCanResizeRows,
+				hasRules		= col.hasClass( 'fl-node-has-rules' ),
 				template 		= wp.template( 'fl-col-overlay' ),
 				overlay			= null;
 
@@ -3715,20 +3775,21 @@
 
 				// Append the template.
 				overlay = FLBuilder._appendOverlay( col, template( {
-					global	      : global,
-					groupLoading  : groupLoading,
-					numCols	      : numCols,
-					first         : first,
-					last   	      : last,
-					isRootCol     : isRootCol,
-					hasChildCols  : hasChildCols,
-					hasParentCol  : hasParentCol,
-					parentFirst   : parentFirst,
-					parentLast    : parentLast,
-					numParentCols : numParentCols,
-					contentWidth  : contentWidth,
-					rowIsFixedWidth : rowIsFixedWidth,
-					userCanResizeRows : userCanResizeRows,
+					global	      		: global,
+					groupLoading  		: groupLoading,
+					numCols	      		: numCols,
+					first         		: first,
+					last   	      		: last,
+					isRootCol     		: isRootCol,
+					hasChildCols  		: hasChildCols,
+					hasParentCol  		: hasParentCol,
+					parentFirst   		: parentFirst,
+					parentLast    		: parentLast,
+					numParentCols 		: numParentCols,
+					contentWidth  		: contentWidth,
+					rowIsFixedWidth 	: rowIsFixedWidth,
+					userCanResizeRows 	: userCanResizeRows,
+					hasRules			: hasRules,
 				} ) );
 
 				// Build the overlay overflow menu if needed.
@@ -4268,11 +4329,11 @@
 		 * @since 1.9
 		 * @access private
 		 * @method _addColsComplete
-		 * @param {String} response The JSON response with the HTML for the new column(s).
+		 * @param {Object|String} response The JSON response with the HTML for the new column(s).
 		 */
 		_addColsComplete: function( response )
 		{
-			var data       = JSON.parse( response ),
+			var data       = 'object' === typeof response ? response : JSON.parse( response ),
 				col        = null,
 				moduleData = FLBuilder._addModuleAfterNodeRender,
 				module     = null;
@@ -4741,6 +4802,8 @@
 				isGlobalRow   = row.hasClass( 'fl-node-global' ),
 				rowIsFixedWidth = !! row.find('.fl-row-fixed-width').addBack('.fl-row-fixed-width').length,
 				userCanResizeRows = FLBuilderConfig.rowResize.userCanResizeRows,
+				hasRules	  = module.hasClass( 'fl-node-has-rules' ),
+				colHasRules	  = col.hasClass( 'fl-node-has-rules' ),
 				template	  = wp.template( 'fl-module-overlay' ),
 				overlay       = null;
 
@@ -4764,20 +4827,22 @@
 
 				// Append the template.
 				overlay = FLBuilder._appendOverlay( module, template( {
-					global 		  : global,
-					moduleName	  : moduleName,
-					groupLoading  : groupLoading,
-					numCols		  : numCols,
-					colFirst      : colFirst,
-					colLast       : colLast,
-					isRootCol     : isRootCol,
-					hasParentCol  : hasParentCol,
-					numParentCols : numParentCols,
-					parentFirst   : parentFirst,
-					parentLast    : parentLast,
-					contentWidth  : contentWidth,
-					rowIsFixedWidth : rowIsFixedWidth,
-					userCanResizeRows : userCanResizeRows,
+					global 		  		: global,
+					moduleName	  		: moduleName,
+					groupLoading  		: groupLoading,
+					numCols		  		: numCols,
+					colFirst      		: colFirst,
+					colLast       		: colLast,
+					isRootCol     		: isRootCol,
+					hasParentCol  		: hasParentCol,
+					numParentCols 		: numParentCols,
+					parentFirst   		: parentFirst,
+					parentLast    		: parentLast,
+					contentWidth  		: contentWidth,
+					rowIsFixedWidth 	: rowIsFixedWidth,
+					userCanResizeRows 	: userCanResizeRows,
+					hasRules			: hasRules,
+					colHasRules			: colHasRules,
 				} ) );
 
 				// Build the overlay overflow menu if necessary.
@@ -5056,7 +5121,8 @@
 		{
 			var module   = $( this ).closest( '.fl-module' ),
 				nodeId   = module.attr( 'data-node' ),
-				position = module.index() + 1,
+				parent   = module.parent(),
+				position = parent.find( ' > .fl-col-group, > .fl-module' ).index( module ) + 1,
 				clone    = module.clone(),
 				form	 = $( '.fl-builder-module-settings[data-node=' + nodeId + ']' ),
 				settings = null;
@@ -5075,7 +5141,7 @@
 			}, 500 );
 
 			FLBuilder._showNodeLoading( nodeId + '-clone' );
-			FLBuilder._newModuleParent 	 = module.parent();
+			FLBuilder._newModuleParent 	 = parent;
 			FLBuilder._newModulePosition = position;
 
 			FLBuilder.ajax({
@@ -5160,6 +5226,10 @@
 		 */
 		_showModuleSettings: function( data, callback )
 		{
+			if ( ! FLBuilderSettingsConfig.modules ) {
+				return;
+			}
+
 			var config   = FLBuilderSettingsConfig.modules[ data.type ],
 				settings = data.settings ? data.settings : FLBuilderSettingsConfig.nodes[ data.nodeId ],
 				head 	 = $( 'head' ),
@@ -5646,6 +5716,10 @@
 				if ( action.indexOf( 'row' ) > -1 ) {
 					var data = JSON.parse( response );
 					FLBuilder.triggerHook( 'didApplyRowTemplateComplete', data.config );
+					callback( data.layout );
+				} else if ( action.indexOf( 'col' ) > -1 ) {
+					var data = JSON.parse( response );
+					FLBuilder.triggerHook( 'didApplyColTemplateComplete', data.config );
 					callback( data.layout );
 				} else {
 					callback( response );
@@ -6174,7 +6248,7 @@
 			// Loop through the form data.
 			for ( i = 0; i < data.length; i++ ) {
 
-				value = data[ i ].value.replace( /\r/gm, '' );
+				value = data[ i ].value.replace( /\r/gm, '' ).replace( /&#39;/g, "'" );
 
 				// Don't save text editor textareas.
 				if ( data[ i ].name.indexOf( 'flrich' ) > -1 ) {
@@ -6728,7 +6802,7 @@
 				asHtmlID                    : field.attr('name'),
 				selectedItemProp            : 'name',
 				searchObjProps              : 'name',
-				minChars                    : 3,
+				minChars                    : 2,
 				keyDelay                    : 1000,
 				fadeOut                     : false,
 				usePlaceholder              : true,
@@ -6807,13 +6881,7 @@
 				editor.getSession().setUseWrapMode( true );
 			}
 
-			editor.setOptions( {
-				enableBasicAutocompletion: true,
-				enableLiveAutocompletion: true,
-				enableSnippets: false,
-				showLineNumbers: false,
-				showFoldWidgets: false
-			} );
+			editor.setOptions( FLBuilderConfig.AceEditorSettings );
 
 			editor.getSession().on( 'change', function( e ) {
 				textarea.val( editor.getSession().getValue() ).trigger( 'change' );
@@ -6868,7 +6936,19 @@
 		 */
 		_showCodeFieldError: function( e ) {
 			e.stopImmediatePropagation();
-			FLBuilder.alert( FLBuilderStrings.codeError );
+			FLBuilder.confirm( {
+			    message: FLBuilderStrings.codeError,
+			    cancel: function(){
+					var saveBtn = $( '.fl-builder-settings:visible .fl-builder-settings-save' );
+					saveBtn.removeClass( 'fl-builder-settings-error' );
+					saveBtn.off( 'click', FLBuilder._showCodeFieldError );
+					saveBtn.trigger( 'click' );
+				},
+			    strings: {
+			        ok: FLBuilderStrings.codeErrorFix,
+			        cancel: FLBuilderStrings.codeErrorIgnore
+			    }
+			} );
 		},
 
 		/* Multiple Fields
@@ -6931,10 +7011,13 @@
 				clone       = fieldRow.clone(),
 				form   		= clone.find( '.fl-form-field' ),
 				formType	= null,
+				defaultVal  = null,
 				index       = parseInt(fieldRow.find('label span.fl-builder-field-index').html(), 10) + 1;
 
 			clone.find('th label span.fl-builder-field-index').html(index);
 			clone.find('.fl-form-field-preview-text').html('');
+			clone.find('.fl-form-field-before').remove();
+			clone.find('.fl-form-field-after').remove();
 			clone.find('input, textarea, select').val('');
 			fieldRow.after(clone);
 			FLBuilder._initMultipleFields();
@@ -6942,6 +7025,15 @@
 			if ( form.length ) {
 				formType = form.find( '.fl-form-field-edit' ).data( 'type' );
 				form.find( 'input' ).val( JSON.stringify( FLBuilderSettingsConfig.defaults.forms[ formType ] ) );
+			}
+			else {
+				form = button.closest('form.fl-builder-settings');
+				formType = form.data( 'type' );
+
+				if ( formType && form.hasClass( 'fl-builder-module-settings' ) ) {
+					defaultVal = FLBuilderSettingsConfig.defaults.modules[ formType ][ fieldName ][0];
+					clone.find('input, textarea, select').val( defaultVal );
+				}
 			}
 		},
 
@@ -7362,7 +7454,7 @@
 				// Check the selected value without the protocol so we get a match if
 				// a site has switched to HTTPS since selecting this photo (#641).
 				if ( selectedSize ) {
-					selectedSize = selectedSize.replace( /https?/, '' );
+					selectedSize = selectedSize.split(/[\\/]/).pop();
 				}
 
 				for(size in photo.sizes) {
@@ -7381,7 +7473,7 @@
 
 					if ( ! selectedSize ) {
 						selected = size == 'full' ? ' selected="selected"' : '';
-					} else if( selectedSize === photo.sizes[ size ].url.replace( /https?/, '' ) ) {
+					} else if( selectedSize === photo.sizes[ size ].url.split(/[\\/]/).pop() ) {
 						selected = ' selected="selected"';
 					}
 
@@ -8042,19 +8134,7 @@
 		_getFontWeights: function( currentFont ){
 			var selectWeight = currentFont.next( '.fl-font-field-weight' ),
 				font         = currentFont.val(),
-				weightMap    = {
-					'default' : 'Default',
-					'regular' : 'Regular',
-					'100': 'Thin 100',
-					'200': 'Extra-Light 200',
-					'300': 'Light 300',
-					'400': 'Normal 400',
-					'500': 'Medium 500',
-					'600': 'Semi-Bold 600',
-					'700': 'Bold 700',
-					'800': 'Extra-Bold 800',
-					'900': 'Ultra-Bold 900'
-				},
+				weightMap    = FLBuilderConfig.FontWeights,
 				weights      = {};
 
 				selectWeight.html('');
@@ -8361,6 +8441,45 @@
 			} );
 
 			input.val( JSON.stringify( value ) ).trigger( 'change' );
+		},
+
+		/* Text Fields - Add Predefined Value Selector
+		----------------------------------------------------------*/
+
+		/**
+		 * Callback for when "add value" selectors for text fields changes.
+		 *
+		 * @since  1.6.5
+		 * @access private
+		 * @method _textFieldAddValueSelectChange
+		 */
+		_textFieldAddValueSelectChange: function()
+		{
+
+			var dropdown     = $( this ),
+			    textField    = $( 'input[name="' + dropdown.data( 'target' ) + '"]' ),
+			    currentValue = textField.val(),
+			    addingValue  = dropdown.val(),
+			    newValue     = '';
+
+			// Adding selected value to target text field only once
+
+				if ( -1 == currentValue.indexOf( addingValue ) ) {
+
+					newValue = ( currentValue.trim() + ' ' + addingValue.trim() ).trim();
+
+					textField
+						.val( newValue )
+						.trigger( 'change' )
+						.trigger( 'keyup' );
+
+				}
+
+			// Resetting the selector
+
+				dropdown
+					.val( '' );
+
 		},
 
 		/* Number Fields
