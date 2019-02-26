@@ -22,3 +22,12 @@ transform: scale(0.5);
 }
 
 }*/
+
+
+#mind-body-buy-now healcode-widget>a {
+    text-decoration: none;
+    background-color: #145b87;
+    color: #ffffff;
+    padding: 10px;
+    border-radius: 4px;
+}
